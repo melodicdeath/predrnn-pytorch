@@ -1,36 +1,39 @@
-__author__ = 'yunbo'
+__author__ = "yunbo"
 
 import torch
 import torch.nn as nn
-from core.layers.SpatioTemporalLSTMCell import SpatioTemporalLSTMCell
+from ..layers.SpatioTemporalLSTMCell import SpatioTemporalLSTMCell
 
 
 class RNN(nn.Module):
-    def __init__(self, num_layers, num_hidden, configs):
+    def __init__(self, num_layers=None, num_hidden=None, configs=None):
         super(RNN, self).__init__()
 
         self.configs = configs
         self.frame_channel = configs.patch_size * configs.patch_size * configs.img_channel
-        self.num_layers = num_layers
-        self.num_hidden = num_hidden
+        self.num_hidden = configs.num_hidden if num_hidden is None else num_hidden
+        self.num_layers = len(self.num_hidden) if num_layers is None else num_layers
+
         cell_list = []
 
         width = configs.img_width // configs.patch_size
         self.MSE_criterion = nn.MSELoss()
 
-        for i in range(num_layers):
-            in_channel = self.frame_channel if i == 0 else num_hidden[i - 1]
+        for i in range(self.num_layers):
+            in_channel = self.frame_channel if i == 0 else self.num_hidden[i - 1]
             cell_list.append(
-                SpatioTemporalLSTMCell(in_channel, num_hidden[i], width, configs.filter_size,
-                                       configs.stride, configs.layer_norm)
+                SpatioTemporalLSTMCell(
+                    in_channel, self.num_hidden[i], width, configs.filter_size, configs.stride, configs.layer_norm
+                )
             )
         self.cell_list = nn.ModuleList(cell_list)
-        self.conv_last = nn.Conv2d(num_hidden[num_layers - 1], self.frame_channel,
-                                   kernel_size=1, stride=1, padding=0, bias=False)
+        self.conv_last = nn.Conv2d(
+            self.num_hidden[self.num_layers - 1], self.frame_channel, kernel_size=1, stride=1, padding=0, bias=False
+        )
 
-    def forward(self, frames_tensor, mask_true):
+    def forward(self, frames_tensor: torch.Tensor, mask_true: torch.Tensor):
         # [batch, length, height, width, channel] -> [batch, length, channel, height, width]
-        frames = frames_tensor.permute(0, 1, 4, 2, 3).contiguous()
+        frames_tensor = frames_tensor.permute(0, 1, 4, 2, 3).contiguous()
         mask_true = mask_true.permute(0, 1, 4, 2, 3).contiguous()
 
         batch = frames.shape[0]
@@ -42,11 +45,11 @@ class RNN(nn.Module):
         c_t = []
 
         for i in range(self.num_layers):
-            zeros = torch.zeros([batch, self.num_hidden[i], height, width]).to(self.configs.device)
+            zeros = torch.zeros([batch, self.num_hidden[i], height, width]).to(frames.device)
             h_t.append(zeros)
             c_t.append(zeros)
 
-        memory = torch.zeros([batch, self.num_hidden[0], height, width]).to(self.configs.device)
+        memory = torch.zeros([batch, self.num_hidden[0], height, width]).to(frames.device)
 
         for t in range(self.configs.total_length - 1):
             # reverse schedule sampling
@@ -59,8 +62,10 @@ class RNN(nn.Module):
                 if t < self.configs.input_length:
                     net = frames[:, t]
                 else:
-                    net = mask_true[:, t - self.configs.input_length] * frames[:, t] + \
-                          (1 - mask_true[:, t - self.configs.input_length]) * x_gen
+                    net = (
+                        mask_true[:, t - self.configs.input_length] * frames[:, t]
+                        + (1 - mask_true[:, t - self.configs.input_length]) * x_gen
+                    )
 
             h_t[0], c_t[0], memory = self.cell_list[0](net, h_t[0], c_t[0], memory)
 
