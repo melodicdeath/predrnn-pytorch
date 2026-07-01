@@ -2,6 +2,11 @@ __author__ = 'yunbo'
 
 import numpy as np
 
+# 作用：将空间像素无损折叠到通道维度，实现空间下采样
+# 原理：
+#   1. 将图像划分为 (H/P) * (W/P) 个大小为 P*P*C_in 的 Patch（P 为 patch_size）；
+#   2. 将每个 Patch 内部的像素拉直/折叠成一个长度为 (P*P*C_in) 的通道向量；
+#   3. 在高度和宽度维度上将这些向量重新拼接（Stack），形成 (H/P) * (W/P) 的新空间特征图。
 def reshape_patch(img_tensor, patch_size):
     assert 5 == img_tensor.ndim
     batch_size = np.shape(img_tensor)[0]
