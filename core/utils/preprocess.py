@@ -1,6 +1,7 @@
 __author__ = 'yunbo'
 
 import numpy as np
+import torch
 
 # 作用：将空间像素无损折叠到通道维度，实现空间下采样
 # 原理：
@@ -44,3 +45,40 @@ def reshape_patch_back(patch_tensor, patch_size):
                                 img_channels])
     return img_tensor
 
+
+def reshape_patch_tensor(img_tensor: torch.Tensor, patch_size: int):
+    assert 5 == img_tensor.ndim
+    batch_size = img_tensor.shape[0]
+    seq_length = img_tensor.shape[1]
+    img_height = img_tensor.shape[2]
+    img_width = img_tensor.shape[3]
+    num_channels = img_tensor.shape[4]
+    a = torch.reshape(img_tensor, [batch_size, seq_length,
+                                img_height//patch_size, patch_size,
+                                img_width//patch_size, patch_size,
+                                num_channels])
+    b = torch.permute(a, (0, 1, 2, 4, 3, 5, 6))
+    patch_tensor = torch.reshape(b, [batch_size, seq_length,
+                                  img_height//patch_size,
+                                  img_width//patch_size,
+                                  patch_size*patch_size*num_channels])
+    return patch_tensor
+
+def reshape_patch_back_tensor(patch_tensor: torch.Tensor, patch_size: int):
+    assert 5 == patch_tensor.ndim
+    batch_size = patch_tensor.shape[0]
+    seq_length = patch_tensor.shape[1]
+    patch_height = patch_tensor.shape[2]
+    patch_width = patch_tensor.shape[3]
+    channels = patch_tensor.shape[4]
+    img_channels = channels // (patch_size*patch_size)
+    a = torch.reshape(patch_tensor, [batch_size, seq_length,
+                                  patch_height, patch_width,
+                                  patch_size, patch_size,
+                                  img_channels])
+    b = torch.permute(a, (0, 1, 2, 4, 3, 5, 6))
+    img_tensor = torch.reshape(b, [batch_size, seq_length,
+                                patch_height * patch_size,
+                                patch_width * patch_size,
+                                img_channels])
+    return img_tensor
