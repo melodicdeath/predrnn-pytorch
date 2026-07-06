@@ -3,6 +3,7 @@ __author__ = "yunbo"
 import torch
 import torch.nn as nn
 from ..layers.SpatioTemporalLSTMCell import SpatioTemporalLSTMCell
+from sandbox.Hzzone.modeling.loss import weighted_mse_mae
 
 
 class RNN(nn.Module):
@@ -31,7 +32,7 @@ class RNN(nn.Module):
             self.num_hidden[self.num_layers - 1], self.frame_channel, kernel_size=1, stride=1, padding=0, bias=False
         )
 
-    def forward(self, frames_tensor: torch.Tensor, mask_true: torch.Tensor):
+    def forward(self, frames_tensor: torch.Tensor, mask_true: torch.Tensor, mask_valid: torch.Tensor):
         # [batch, length, height, width, channel] -> [batch, length, channel, height, width]
         frames = frames_tensor.permute(0, 1, 4, 2, 3).contiguous()
         mask_true = mask_true.permute(0, 1, 4, 2, 3).contiguous()
@@ -77,5 +78,6 @@ class RNN(nn.Module):
 
         # [length, batch, channel, height, width] -> [batch, length, height, width, channel]
         next_frames = torch.stack(next_frames, dim=0).permute(1, 0, 3, 4, 2).contiguous()
-        loss = self.MSE_criterion(next_frames, frames_tensor[:, 1:])
+        # loss = self.MSE_criterion(next_frames, frames[:, 1:])
+        loss = weighted_mse_mae(next_frames, frames_tensor[:, 1:], mask_valid[:, 1:])
         return next_frames, loss

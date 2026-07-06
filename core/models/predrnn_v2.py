@@ -2,9 +2,9 @@ __author__ = 'yunbo'
 
 import torch
 import torch.nn as nn
-from core.layers.SpatioTemporalLSTMCell_v2 import SpatioTemporalLSTMCell
+from ..layers.SpatioTemporalLSTMCell_v2 import SpatioTemporalLSTMCell
 import torch.nn.functional as F
-from core.utils.tsne import visualization
+from ..utils.tsne import visualization
 
 
 class RNN(nn.Module):
