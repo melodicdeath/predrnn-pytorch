@@ -79,5 +79,11 @@ class RNN(nn.Module):
         # [length, batch, channel, height, width] -> [batch, length, height, width, channel]
         next_frames = torch.stack(next_frames, dim=0).permute(1, 0, 3, 4, 2).contiguous()
         # loss = self.MSE_criterion(next_frames, frames[:, 1:])
-        loss = weighted_mse_mae(next_frames, frames_tensor[:, 1:], mask_valid[:, 1:])
+        loss = weighted_mse_mae(
+            output=next_frames,
+            target=frames_tensor[:, 1:],
+            mask=mask_valid[:, 1:],
+            dbz_weights=True,
+            leadtime_weight=True,
+        )
         return next_frames, loss
