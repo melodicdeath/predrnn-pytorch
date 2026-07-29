@@ -1,4 +1,4 @@
-__author__ = 'yunbo'
+__author__ = "yunbo"
 
 import torch
 import torch.nn as nn
@@ -8,7 +8,7 @@ from ..utils.tsne import visualization
 
 
 class RNN(nn.Module):
-    def __init__(self, num_layers, num_hidden, configs):
+    def __init__(self, configs, num_layers=None, num_hidden=None):
         super(RNN, self).__init__()
 
         self.configs = configs
@@ -16,24 +16,26 @@ class RNN(nn.Module):
         self.visual_path = self.configs.visual_path
 
         self.frame_channel = configs.patch_size * configs.patch_size * configs.img_channel
-        self.num_layers = num_layers
-        self.num_hidden = num_hidden
+        self.num_hidden = configs.num_hidden if num_hidden is None else num_hidden
+        self.num_layers = len(self.num_hidden) if num_layers is None else num_layers
         cell_list = []
 
         width = configs.img_width // configs.patch_size
         self.MSE_criterion = nn.MSELoss()
 
-        for i in range(num_layers):
-            in_channel = self.frame_channel if i == 0 else num_hidden[i - 1]
+        for i in range(self.num_layers):
+            in_channel = self.frame_channel if i == 0 else self.num_hidden[i - 1]
             cell_list.append(
-                SpatioTemporalLSTMCell(in_channel, num_hidden[i], width, configs.filter_size,
-                                       configs.stride, configs.layer_norm)
+                SpatioTemporalLSTMCell(
+                    in_channel, self.num_hidden[i], width, configs.filter_size, configs.stride, configs.layer_norm
+                )
             )
         self.cell_list = nn.ModuleList(cell_list)
-        self.conv_last = nn.Conv2d(num_hidden[num_layers - 1], self.frame_channel, kernel_size=1, stride=1, padding=0,
-                                   bias=False)
+        self.conv_last = nn.Conv2d(
+            self.num_hidden[self.num_layers - 1], self.frame_channel, kernel_size=1, stride=1, padding=0, bias=False
+        )
         # shared adapter
-        adapter_num_hidden = num_hidden[0]
+        adapter_num_hidden = self.num_hidden[0]
         self.adapter = nn.Conv2d(adapter_num_hidden, adapter_num_hidden, 1, stride=1, padding=0, bias=False)
 
     def forward(self, frames_tensor, mask_true):
@@ -78,8 +80,10 @@ class RNN(nn.Module):
                 if t < self.configs.input_length:
                     net = frames[:, t]
                 else:
-                    net = mask_true[:, t - self.configs.input_length] * frames[:, t] + \
-                          (1 - mask_true[:, t - self.configs.input_length]) * x_gen
+                    net = (
+                        mask_true[:, t - self.configs.input_length] * frames[:, t]
+                        + (1 - mask_true[:, t - self.configs.input_length]) * x_gen
+                    )
 
             h_t[0], c_t[0], memory, delta_c, delta_m = self.cell_list[0](net, h_t[0], c_t[0], memory)
             delta_c_list[0] = F.normalize(self.adapter(delta_c).view(delta_c.shape[0], delta_c.shape[1], -1), dim=2)
@@ -101,7 +105,8 @@ class RNN(nn.Module):
             # decoupling loss
             for i in range(0, self.num_layers):
                 decouple_loss.append(
-                    torch.mean(torch.abs(torch.cosine_similarity(delta_c_list[i], delta_m_list[i], dim=2))))
+                    torch.mean(torch.abs(torch.cosine_similarity(delta_c_list[i], delta_m_list[i], dim=2)))
+                )
 
         if self.visual:
             # visualization of delta_c and delta_m
