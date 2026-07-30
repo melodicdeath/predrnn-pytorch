@@ -4,6 +4,7 @@ import torch
 import torch.nn as nn
 from ..layers.SpatioTemporalLSTMCell import SpatioTemporalLSTMCell
 from sandbox.Hzzone.modeling.loss import weighted_mse_mae
+from torch.utils.checkpoint import checkpoint
 
 
 class RNN(nn.Module):
@@ -58,20 +59,34 @@ class RNN(nn.Module):
                 if t == 0:
                     net = frames[:, t]
                 else:
-                    net = mask_true[:, t - 1] * frames[:, t] + (1 - mask_true[:, t - 1]) * x_gen
+                    net = (
+                        mask_true[:, t - 1] * frames[:, t] + (1 - mask_true[:, t - 1]) * x_gen.detach()
+                        if self.configs.detach
+                        else x_gen
+                    )
             else:
                 if t < self.configs.input_length:
                     net = frames[:, t]
                 else:
                     net = (
                         mask_true[:, t - self.configs.input_length] * frames[:, t]
-                        + (1 - mask_true[:, t - self.configs.input_length]) * x_gen
+                        + (1 - mask_true[:, t - self.configs.input_length]) * x_gen.detach()
+                        if self.configs.detach
+                        else x_gen
                     )
 
-            h_t[0], c_t[0], memory = self.cell_list[0](net, h_t[0], c_t[0], memory)
+            if self.training and self.configs.gradient_checkpointing:
+                h_t[0], c_t[0], memory = checkpoint(self.cell_list[0], net, h_t[0], c_t[0], memory, use_reentrant=False)
+            else:
+                h_t[0], c_t[0], memory = self.cell_list[0](net, h_t[0], c_t[0], memory)
 
             for i in range(1, self.num_layers):
-                h_t[i], c_t[i], memory = self.cell_list[i](h_t[i - 1], h_t[i], c_t[i], memory)
+                if self.training and self.configs.gradient_checkpointing:
+                    h_t[i], c_t[i], memory = checkpoint(
+                        self.cell_list[i], h_t[i - 1], h_t[i], c_t[i], memory, use_reentrant=False
+                    )
+                else:
+                    h_t[i], c_t[i], memory = self.cell_list[i](h_t[i - 1], h_t[i], c_t[i], memory)
 
             x_gen = self.conv_last(h_t[self.num_layers - 1])
             next_frames.append(x_gen)
